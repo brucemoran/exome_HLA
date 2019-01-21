@@ -20,7 +20,9 @@ if [[ ! -d $BASEDIR ]];then
 fi
 
 cd $BASEDIR
-singularity pull shub://HugoMananet/HLAminer:hlaminer.1.4.def
+if [[ ! -e $BASEDIR/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg ]];then
+  singularity pull shub://HugoMananet/HLAminer:hlaminer.1.4.def
+fi
 
 if [[ ! -e $SAMPMAP ]];then
   echo "No sample map file found at $SAMPMAP"
@@ -34,11 +36,12 @@ fi
 ##check inputs exist; create script and output directory for sample
 DATE=$(date +"%Y%M%d")
 cat $SAMPMAP | while read LINE; do
-  SAMPLEID=$(echo $LINE | cut -f 1)
-  FASTQ=$(echo $LINE | cut -f 2)
+  SAMPLEID=$(echo $LINE | perl -ane 'print $F[0];')
+  FASTQ=$(echo $LINE | perl -ane 'print $F[1];')
 
   ##dir to hold output
   EXECDIR="$BASEDIR/analysis/$SAMPLEID"
+  echo "Creating $EXECDIR..."
   if [[ ! -d "$EXECDIR" ]];then
     mkdir -p "$EXECDIR"
   fi
@@ -48,24 +51,19 @@ cat $SAMPMAP | while read LINE; do
   ##test paired-end
   if [[ "$FASTQ" =~ "," ]];then
     echo "Found paired-end data..."
-    FASTQ1=$(echo $FASTQ | cut -d "," -f 1)
-    FASTQ2=$(echo $FASTQ | cut -d "," -f 2)
+    FASTQ1=$(echo $FASTQ | perl -ane '@s=split(/\,/,$_);print $s[0];')
+    FASTQ2=$(echo $FASTQ | perl -ane '@s=split(/\,/,$_);print $s[1];')
     if [[ -e $FASTQ1 && -e $FASTQ2 ]]; then
-      sed "s/FASTQ1/$FASTQ1/g" template_HLAminer_PE_exec.sh | \
-      sed "s/FASTQ2/$FASTQ2/g" | \
-      sed "s/SAMPLEID/$SAMPLEID/g" | \
-      sed "s/EXECDIR/$EXECDIR/g" > "$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
-      singularity exec $BASEDIR/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg sh "$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
+      cat template_HLAminer_PE_exec.sh | sed "s/FASTQ1/$FASTQ1/g" | sed "s/FASTQ2/$FASTQ2/g" | sed "s/SAMPLEID/$SAMPLEID/g" | sed "s/EXECDIR/$EXECDIR/g" > "$EXECDIR/$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
+      #singularity exec $BASEDIR/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg sh "$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
     else
       echo "Could not find $FASTQ1 and/or $FASTQ2, ensure paths are correct in $SAMPMAP"
     fi
   else
     if [[ -e $FASTQ ]]; then
       echo "Found single-end data..."
-      sed "s/FASTQ/$FASTQ/g" template_HLAminer_PE_exec.sh | \
-      sed "s/SAMPLEID/$SAMPLEID/g" | \
-      sed "s/EXECDIR/$EXECDIR/g" > "$SAMPLEID.HLAminer_SE_exec.$DATE.sh"
-      $BASEDIR/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg sh "$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
+      cat template_HLAminer_PE_exec.sh | sed "s/FASTQ/$FASTQ/g" |    sed "s/SAMPLEID/$SAMPLEID/g" | sed "s/EXECDIR/$EXECDIR/g" > "$EXECDIR/$SAMPLEID.HLAminer_SE_exec.$DATE.sh"
+      #singularity exec $BASEDIR/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg sh "$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
     else
       echo "Could not find $FASTQ..."
     fi
