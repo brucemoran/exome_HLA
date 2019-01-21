@@ -34,7 +34,7 @@ fi
 ###############
 
 ##check inputs exist; create script and output directory for sample
-DATE=$(date +"%Y%M%d")
+DATE=$(date +"%Y%m%d")
 cat $SAMPMAP | while read LINE; do
   SAMPLEID=$(echo $LINE | perl -ane 'print $F[0];')
   FASTQ=$(echo $LINE | perl -ane 'print $F[1];')
@@ -54,7 +54,7 @@ cat $SAMPMAP | while read LINE; do
     FASTQ1=$(echo $FASTQ | perl -ane '@s=split(/\,/,$_);print $s[0];')
     FASTQ2=$(echo $FASTQ | perl -ane '@s=split(/\,/,$_);print $s[1];')
     if [[ -e $FASTQ1 && -e $FASTQ2 ]]; then
-      cat template_HLAminer_PE_exec.sh | sed "s/FASTQ1/$FASTQ1/g" | sed "s/FASTQ2/$FASTQ2/g" | sed "s/SAMPLEID/$SAMPLEID/g" | sed "s/EXECDIR/$EXECDIR/g" > "$EXECDIR/$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
+      cat $BASEDIR/template_HLAminer_PE_exec.sh | sed "s#FASTQ1#$FASTQ1#g" | sed "s#FASTQ2#$FASTQ2#g" | sed "s#SAMPLEID#$SAMPLEID#g" | sed "s#EXECDIR#$EXECDIR#g" > "$EXECDIR/$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
       #singularity exec $BASEDIR/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg sh "$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
     else
       echo "Could not find $FASTQ1 and/or $FASTQ2, ensure paths are correct in $SAMPMAP"
@@ -62,7 +62,7 @@ cat $SAMPMAP | while read LINE; do
   else
     if [[ -e $FASTQ ]]; then
       echo "Found single-end data..."
-      cat template_HLAminer_PE_exec.sh | sed "s/FASTQ/$FASTQ/g" |    sed "s/SAMPLEID/$SAMPLEID/g" | sed "s/EXECDIR/$EXECDIR/g" > "$EXECDIR/$SAMPLEID.HLAminer_SE_exec.$DATE.sh"
+      cat $BASEDIR/template_HLAminer_PE_exec.sh | sed "s#FASTQ#$FASTQ#g" | sed "s#SAMPLEID#$SAMPLEID#g" | sed "s#EXECDIR#$EXECDIR#g" > "$EXECDIR/$SAMPLEID.HLAminer_SE_exec.$DATE.sh"
       #singularity exec $BASEDIR/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg sh "$SAMPLEID.HLAminer_PE_exec.$DATE.sh"
     else
       echo "Could not find $FASTQ..."
@@ -76,6 +76,6 @@ cat $SAMPMAP | while read LINE; do
   ##in the spirit of HLAminer (Perl)...
   for x in *_HP*.csv;do
     mv $x $SAMPLEID.$x
-    perl $BASEDIR/parse_HLminer_output.pl $SAMPLEID.$x
+    perl $BASEDIR/parse_HLAminer_output.pl $SAMPLEID.$x
   done
 done
