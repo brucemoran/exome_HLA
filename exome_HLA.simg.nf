@@ -17,8 +17,7 @@ if (params.help) {
     --sampleCsv "send/location/sampleMap.csv" \
     -with-timeline exome_HLA.timeline \
     -with-report exome_HLA.report" \
-    -c exome_HLA.simg.nextflow.config \
-    -with-singularity /your/singularity/images/HugoMananet-HLAminer-master-hlaminer.1.4.def.simg'
+    -c exome_HLA.simg.nextflow.config'
 
   log.info ''
   log.info 'Mandatory arguments:'
@@ -31,8 +30,6 @@ if (params.help) {
 */
 params.outDir = "analysis"
 
-/* 0.1: faidx HLA-I_II_CDS.fasta
-*/
 Channel.fromPath("$params.sampleCsv", type: 'file')
        .splitCsv( header: true )
        .map { row -> [row.sampleID, file(row.read1), file(row.read2)] }
@@ -54,7 +51,8 @@ process hlamin {
   bwa sampe -o 1000 /opt/database/HLA-I_II_CDS.fasta aln_1.sai aln_2.sai $read1 $read2 > $sampleID".aln.sam"
   /opt/bin/HLAminer.pl -p /opt/database/hla_nom_p.txt -a $sampleID".aln.sam" -h /opt/database/HLA-I_II_CDS.fasta -s 500
   rm *sai
-  samtools view -hC -T /opt/database/HLA-I_II_CDS.fasta $sampleID".aln.sam"
+  samtools view -hC -T /opt/database/HLA-I_II_CDS.fasta $sampleID".aln.sam" > $sampleID".aln.cram"
+  rm $sampleID".aln.sam"
 
   echo $read1 > fastq.files
   echo $read2 >> fastq.files
@@ -85,7 +83,8 @@ process pars {
   output:
   file('*tsv') into completedPars
 
-  """
-  perl parse_HLAminer_output.pl $csv
-  """
+  shell:
+  '''
+  perl parse_HLAminer_output.pl !{csv}
+  '''
 }
