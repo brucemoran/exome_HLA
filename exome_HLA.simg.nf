@@ -33,17 +33,17 @@ params.outDir = "analysis"
 Channel.fromPath("$params.sampleCsv", type: 'file')
        .splitCsv( header: true )
        .map { row -> [row.sampleID, file(row.read1), file(row.read2)] }
-       .set { hlaminer }
+       .into { hpraminer; hptasrminer }
 
-process hlamin {
+process hpra {
 
   publishDir path: "$params.outDir/$sampleID", mode: 'copy', pattern: "*[.csv,.log]"
 
   input:
-  set val(sampleID), file(read1), file(read2) from hlaminer
+  set val(sampleID), file(read1), file(read2) from hpraminer
 
   output:
-  file("$sampleID*csv") into parsing
+  set val(sampleID), file("$sampleID*csv") into parsehpra
 
   """
   bwa aln -e 0 -o 0 /opt/database/HLA-I_II_CDS.fasta $read1 > aln_1.sai
@@ -54,6 +54,22 @@ process hlamin {
   samtools view -hC -T /opt/database/HLA-I_II_CDS.fasta $sampleID".aln.sam" > $sampleID".aln.cram"
   rm $sampleID".aln.sam"
 
+  mv HLAminer_HPRA.csv $sampleID".HLAminer_HPRA.csv"
+  mv HLAminer_HPRA.log $sampleID".HLAminer_HPRA.log"
+  """
+}
+
+process hptasr {
+
+  publishDir path: "$params.outDir/$sampleID", mode: 'copy', pattern: "*[.csv,.log]"
+
+  input:
+  set val(sampleID), file(read1), file(read2) from hptasrminer
+
+  output:
+  set val(sampleID), file("$sampleID*csv") into parsehptasr
+
+  """
   echo $read1 > fastq.files
   echo $read2 >> fastq.files
 
@@ -65,26 +81,81 @@ process hlamin {
   /opt/bin/parseXMLblast.pl -c /opt/bin/ncbiBlastConfig.txt -i /opt/database/HLA-I_II_CDS.fasta -d TASRhla200.contigs -o 0 > hla_vs_tig-ncbi.coord
   /opt/bin/HLAminer.pl -p /opt/database/hla_nom_p.txt -b tig_vs_hla-ncbi.coord -r hla_vs_tig-ncbi.coord -c TASRhla200.contigs -h /opt/database/HLA-I_II_CDS.fasta
 
-  for x in *_H*csv; do
-    mv \$x $sampleID"."\$x
-  done
+  mv HLAminer_HPTASR.csv $sampleID".HLAminer_HPTASR.csv"
+  mv HLAminer_HPTASR.log $sampleID".HLAminer_HPTASR.log"
   """
 }
 
 /* 2.: Parse outputs
 */
+parsehpra.join(parsehptasr).set { parseboth }
 process pars {
 
   publishDir "$params.outDir/$sampleID", mode:"copy", pattern: "*tsv"
 
   input:
-  file(csv) from parsing
+  set val(sampleID), file(csv1), file(csv2) from parseboth
 
   output:
   file('*tsv') into completedPars
 
   shell:
   '''
-  perl parse_HLAminer_output.pl !{csv}
+  #! /usr/bin/perl
+
+  use strict;
+  use warnings;
+
+  ##parser for HLAminer to write to standardised format
+  ##parses file name for sampleID (splits on first "." keeping [0])
+  ##format outputs:
+  #HLA-XYZ XYZ*01:001 for all precitions
+  ##strategy: if previous line started ^HLA, \
+  #and this line contains "Prediction", \
+  #then until next line !~ "\\*", \
+  #split on "," and return [0]=~s/\\s+//;
+
+  ##file naming
+  my @inputs = ("!{csv1}", "!{csv2}");
+  foreach my $s (@inputs){
+    my $fileinp = $s;
+    my @outname = split(/\\./, $fileinp);
+    my $fileout = "!{sampleID}" . "." . $outname[1] . ".tsv";
+
+    ##iterate over file
+    open(IN, $fileinp);
+
+    ##to write output
+    open(OUT, ">$fileout");
+    print OUT "SAMPLEID\\tHLAminer_Call\\n";
+
+    ##flags to determine course of action
+    my $HLAline=0;
+    my $PRDline=0;
+    my $KEPline=0;
+
+    while(<IN>){
+      if($_=~m/^HLA/){
+        $HLAline=1;
+        next;
+      }
+      if($_=~m/Prediction/){
+        $PRDline=1;
+        next;
+      }
+      if(($PRDline==1) && ($_ ne "")){
+        if($_=~m/:/){
+          my @sp=split(/\\,/,$_);
+          my $HLAcall=$sp[0];
+          $HLAcall=~s/\\s+//g;
+          print OUT "!{sampleID}" . "\\t" . $HLAcall . "\\n";
+          next;
+        }
+      }
+    }
+
+    close IN;
+    close OUT;
+  }
   '''
 }
