@@ -37,7 +37,7 @@ Channel.fromPath("$params.sampleCsv", type: 'file')
 
 process hpra {
 
-  publishDir path: "$params.outDir/$sampleID", mode: 'copy', pattern: "*[.csv,.log]"
+  publishDir path: "$params.outDir/HLAminer/$sampleID", mode: 'copy', pattern: "*[.csv,.log]"
 
   input:
   set val(sampleID), file(read1), file(read2) from hpraminer
@@ -61,7 +61,7 @@ process hpra {
 
 process hptasr {
 
-  publishDir path: "$params.outDir/$sampleID", mode: 'copy', pattern: "*[.csv,.log]"
+  publishDir path: "$params.outDir/HLAminer/$sampleID", mode: 'copy', pattern: "*[.csv,.log]"
 
   input:
   set val(sampleID), file(read1), file(read2) from hptasrminer
@@ -91,13 +91,13 @@ process hptasr {
 parsehpra.join(parsehptasr).set { parseboth }
 process pars {
 
-  publishDir "$params.outDir/$sampleID", mode:"copy", pattern: "*tsv"
+  publishDir "$params.outDir/HLAminer/$sampleID", mode:"copy", pattern: "*tsv"
 
   input:
   set val(sampleID), file(csv1), file(csv2) from parseboth
 
   output:
-  file('*tsv') into completedPars
+  file('*tsv') into rprocess
 
   shell:
   '''
@@ -143,6 +143,7 @@ process pars {
         $PRDline=1;
         next;
       }
+      ##we have a line of interest; split and print OUT
       if(($PRDline==1) && ($_ ne "")){
         if($_=~m/:/){
           my @sp=split(/\\,/,$_);
@@ -159,3 +160,57 @@ process pars {
   }
   '''
 }
+
+/* 3.: Concatenate into R object; indicate frequency of each set
+*/
+
+process rfreq {
+
+  publishDir "$params.outDir/R", mode:"copy"
+
+  input:
+  file(mixr) from rprocess.collect()
+
+  output:
+  file('*RData') into completeR
+
+  shell:
+  '''
+  #! /usr/bin/Rscript
+
+  ##script to read in all tsv for HPRA, HPTASR tsv files
+  ##combines, then creates table of frequency of all HLAminer calls
+
+  library(tidyverse)
+
+  ##iterate over HPRA, HPTASR inputs
+  lapply(c("HPRA", "HPTASR"), function(HPTYPE){
+
+    ##create list to hold output in single object
+    all_list <- as.list(1,2,3)
+
+    ##read in all matches to HPTYPE.tsv
+    all_list[[1]] <- map_df(list.files(pattern = paste0(HPTYPE,".tsv"),
+                                full.names = TRUE),
+                      read_tsv)
+    ##tabulate
+    all_table <- table(all_list[[1]]$HLAminer_Call) %>% sort()
+    ##frequency and table in tibble
+    all_list[[2]] <- tibble(HLAminer_Call = names(all_table),
+                            count = c(all_table),
+                            frequency = c(all_table/length(unique(all_list[[1]]$SAMPLEID)))) %>%
+                     arrange(., desc(frequency))
+
+    ##rename list
+    names(all_list) <- paste(HPTYPE, c("tsv", "table"), sep="_")
+
+    ##assign name to object for HPTYPE
+    assignName <- paste0(HPTYPE, "_list")
+    assign(assignName, value = all_list)
+
+    ##save output
+    save(list = assignName, file = paste0(HPTYPE, ".table.RData"))
+  })
+  '''
+}
+completeR.subscribe { println "Completed R processing: " + it }
